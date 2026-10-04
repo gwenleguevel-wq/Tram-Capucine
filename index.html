@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Le Tram de Capucine</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  body {
+    font-family: "Comic Sans MS", "Segoe UI", sans-serif;
+    background: #bfe3f2;
+    display: flex; flex-direction: column;
+    touch-action: none;
+  }
+  #ecran { flex: 1; position: relative; }
+  canvas { display: block; width: 100%; height: 100%; }
+
+  /* ---- Manette de conduite ---- */
+  #panneau-commandes {
+    height: 42%;
+    min-height: 240px;
+    padding: 8px 10px;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    background: linear-gradient(#3a4f63, #22303f);
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    border-top: 6px solid #16212c;
+    position: relative;
+  }
+  #cadre-manette {
+    width: 120px; height: 92%;
+    background: #16212c;
+    border-radius: 20px;
+    position: relative;
+    box-shadow: inset 0 0 12px #000;
+  }
+  #etiquette-manette {
+    position: absolute; top: 6px; left: 0; right: 0;
+    text-align: center; color: #9fb8c9; font-size: 13px;
+  }
+  #piste-manette {
+    position: absolute; top: 34px; bottom: 34px; left: 50%;
+    width: 14px; transform: translateX(-50%);
+    background: #0c131a; border-radius: 7px;
+  }
+  #poignee {
+    position: absolute; left: 50%; transform: translate(-50%, 50%);
+    width: 108px; height: 62px;
+    background: linear-gradient(#ffd23f, #e8a812);
+    border-radius: 12px;
+    border: 3px solid #8a6407;
+    cursor: grab;
+    display: flex; align-items: center; justify-content: center;
+    color: #5b4304; font-weight: bold; font-size: 15px;
+    box-shadow: 0 4px 8px rgba(0,0,0,.5);
+    user-select: none;
+  }
+  #fleches-info {
+    position: absolute; bottom: 6px; left: 0; right: 0;
+    text-align: center; color: #9fb8c9; font-size: 13px;
+  }
+
+  /* ---- Bouton cloche ---- */
+  #zone-cloche { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  #bouton-cloche {
+    width: min(170px, 32vw); height: min(170px, 32vw);
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #ff5d5d, #c01b1b 70%);
+    border: 8px solid #7e0f0f;
+    color: white; font-size: 26px; font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 8px 0 #7e0f0f, 0 12px 18px rgba(0,0,0,.5);
+    transition: transform .05s, box-shadow .05s;
+  }
+  #bouton-cloche:active, #bouton-cloche.pressé {
+    transform: translateY(6px);
+    box-shadow: 0 2px 0 #7e0f0f, 0 4px 8px rgba(0,0,0,.5);
+  }
+  #zone-cloche p { color: #ffd97a; font-size: 18px; }
+
+  /* ---- Bouton des portes ---- */
+  #zone-portes { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  #bouton-portes {
+    width: 118px; height: 118px;
+    border-radius: 24px;
+    background: radial-gradient(circle at 35% 30%, #43d97c, #189a4a 70%);
+    border: 6px solid #0c6b33;
+    color: white; font-size: 20px; font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 7px 0 #0c6b33, 0 10px 16px rgba(0,0,0,.5);
+    transition: transform .05s, box-shadow .05s;
+  }
+  #bouton-portes:active, #bouton-portes.pressé {
+    transform: translateY(5px);
+    box-shadow: 0 2px 0 #0c6b33, 0 4px 8px rgba(0,0,0,.5);
+  }
+  #zone-portes p { color: #a5f0c2; font-size: 16px; }
+  @media (max-height: 620px) {
+    #bouton-portes { width: 100px; height: 100px; font-size: 17px; }
+    #bouton-cloche { font-size: 21px; }
+    #zone-cloche p, #zone-portes p { font-size: 14px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="ecran"><canvas id="scene"></canvas></div>
+
+<div id="panneau-commandes">
+  <div id="cadre-manette">
+    <div id="etiquette-manette">MANETTE</div>
+    <div id="piste-manette"></div>
+    <div id="poignee">🚋</div>
+    <div id="fleches-info">↑ avancer &nbsp;•&nbsp; reculer ↓</div>
+  </div>
+  <div id="zone-cloche">
+    <button id="bouton-cloche">🔔 CLOCHE</button>
+    <p>Ting-ting !</p>
+  </div>
+  <div id="zone-portes">
+    <button id="bouton-portes">🚪 PORTES</button>
+    <p id="texte-portes">Fermées</p>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   Le Tram de Capucine — mini simulateur
+   Manette : avancer / reculer. Bouton : cloche de Nantes.
+   ============================================================ */
+
+const canvas = document.getElementById("scene");
+const ctx = canvas.getContext("2d");
+let W = 0, H = 0;
+
+function redimensionner() {
+  const ecran = document.getElementById("ecran");
+  W = canvas.width = ecran.clientWidth;
+  H = canvas.height = ecran.clientHeight;
+}
+window.addEventListener("resize", redimensionner);
+redimensionner();
+
+/* ---------------- Cloche (son « ting-ting » du tram) --------------- */
+let audioCtx = null;
+function contexteAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  return audioCtx;
+}
+
+function tint(heureDebut, freq, gain) {
+  const ac = contexteAudio();
+  //partials métalliques d'une cloche de tram
+  [[1.0, 1], [2.76, .35], [5.4, .12]].forEach(([ratio, vol]) => {
+    const o = ac.createOscillator();
+    const g = ac.createGain();
+    o.type = "sine";
+    o.frequency.value = freq * ratio;
+    const t = ac.currentTime + heureDebut;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(gain * vol, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+    o.connect(g); g.connect(ac.destination);
+    o.start(t); o.stop(t + 1);
+  });
+}
+function sonCloche() { tint(0, 1568, 0.5); tint(0.16, 1568, 0.5); }
+
+/* ---------------- Annonces vocales ---------------- */
+function parler(texte) {
+  const synth = window.speechSynthesis;
+  if (!synth) return;
+  synth.cancel();
+  const u = new SpeechSynthesisUtterance(texte);
+  u.lang = "fr-FR";
+  u.rate = 0.95; u.pitch = 1;
+  synth.speak(u);
+}
+
+/* ---------------- Portes ---------------- */
+let portesOuvertes = false;
+let animationPortes = 0;         // 0 fermées → 1 ouvertes
+let ciblePortes = 0;
+const boutonPortes = document.getElementById("bouton-portes");
+const textePortes = document.getElementById("texte-portes");
+
+function sonPortes(ouvrir) {
+  const ac = contexteAudio();
+  const dur = ouvrir ? 1.2 : 1.0;
+  const t0 = ac.currentTime;
+  // moteur électrique (léger bourdonnement grave)
+  const o = ac.createOscillator();
+  const g = ac.createGain();
+  o.type = "sawtooth";
+  o.frequency.setValueAtTime(70, t0);
+  o.frequency.linearRampToValueAtTime(110, t0 + dur);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(0.06, t0 + 0.1);
+  g.gain.linearRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g); g.connect(ac.destination);
+  o.start(t0); o.stop(t0 + dur + 0.1);
+  // « tchac » de fin de course
+  const tFin = t0 + dur - 0.05;
+  [[4200, 0.06], [2800, 0.04]].forEach(([f, vol]) => {
+    const o2 = ac.createOscillator();
+    const g2 = ac.createGain();
+    o2.type = "square";
+    o2.frequency.value = f;
+    g2.gain.setValueAtTime(0.001, tFin);
+    g2.gain.linearRampToValueAtTime(vol, tFin + 0.01);
+    g2.gain.exponentialRampToValueAtTime(0.0001, tFin + 0.15);
+    o2.connect(g2); g2.connect(ac.destination);
+    o2.start(tFin); o2.stop(tFin + 0.2);
+  });
+}
+
+function basculerPortes() {
+  portesOuvertes = !portesOuvertes;
+  ciblePortes = portesOuvertes ? 1 : 0;
+  sonPortes(portesOuvertes);
+  if (portesOuvertes) {
+    textePortes.textContent = "Ouvertes";
+    parler("Attention, les portes s'ouvrent.");
+  } else {
+    textePortes.textContent = "Fermées";
+    parler("Les portes sont fermées.");
+  }
+  boutonPortes.classList.add("pressé");
+  setTimeout(() => boutonPortes.classList.remove("pressé"), 150);
+}
+boutonPortes.addEventListener("pointerdown", e => { e.preventDefault(); basculerPortes(); });
+
+/* ---------------- Fond sonore de roulage ---------------- */
+let noeudRoulage = null;      // source de bruit + filtre + gain, créé au premier contact
+function creerRoulage() {
+  const ac = contexteAudio();
+  // 2 secondes de bruit blanc mis en boucle
+  const n = 2 * ac.sampleRate;
+  const tampon = ac.createBuffer(1, n, ac.sampleRate);
+  const donnees = tampon.getChannelData(0);
+  for (let i = 0; i < n; i++) donnees[i] = Math.random() * 2 - 1;
+  const source = ac.createBufferSource();
+  source.buffer = tampon;
+  source.loop = true;
+  // passe-bas : le bruit devient un roulement grave sur les rails
+  const filtre = ac.createBiquadFilter();
+  filtre.type = "lowpass";
+  filtre.frequency.value = 380;
+  filtre.Q.value = 0.7;
+  const gain = ac.createGain();
+  gain.gain.value = 0;
+  source.connect(filtre); filtre.connect(gain); gain.connect(ac.destination);
+  source.start();
+  return { gain, filtre, ac };
+}
+function majRoulage() {
+  if (!noeudRoulage) return;
+  const v = Math.abs(vitesse);
+  const { gain, filtre, ac } = noeudRoulage;
+  // volume proportionnel à la vitesse, doux au démarrage
+  gain.gain.setTargetAtTime(v > 0.02 ? 0.035 + v * 0.10 : 0, ac.currentTime, 0.2);
+  // le « gratte » des rails est plus clair quand on va vite
+  filtre.frequency.setTargetAtTime(280 + v * 500, ac.currentTime, 0.2);
+}
+
+const boutonCloche = document.getElementById("bouton-cloche");
+function actionnerCloche() {
+  sonCloche();
+  boutonCloche.classList.add("pressé");
+  setTimeout(() => boutonCloche.classList.remove("pressé"), 120);
+}
+boutonCloche.addEventListener("pointerdown", e => { e.preventDefault(); actionnerCloche(); });
+window.addEventListener("keydown", e => {
+  if (e.code === "Space") { e.preventDefault(); actionnerCloche(); }
+});
+
+/* ---------------- Manette de conduite ---------------- */
+const poignee = document.getElementById("poignee");
+const piste = document.getElementById("piste-manette");
+let vitesse = 0;          // -1 .. 1
+let cibleVitesse = 0;
+
+function majPoignee() {
+  const h = piteHaut();
+  const y = h.min + (1 - (cibleVitesse + 1) / 2) * (h.max - h.min);
+  poignee.style.top = y + "px";
+}
+function piteHaut() {
+  const p = piste.getBoundingClientRect();
+  const c = document.getElementById("cadre-manette").getBoundingClientRect();
+  return { min: p.top - c.top, max: p.bottom - c.top };
+}
+function depuisY(clientY) {
+  const r = piste.getBoundingClientRect();
+  let v = 1 - 2 * (clientY - r.top) / r.height;   // 1 en haut, -1 en bas
+  cibleVitesse = Math.max(-1, Math.min(1, v));
+  majPoignee();
+}
+let manipulation = false;
+poignee.addEventListener("pointerdown", e => {
+  manipulation = true;
+  poignee.setPointerCapture(e.pointerId);
+  poignee.style.cursor = "grabbing";
+});
+poignee.addEventListener("pointermove", e => { if (manipulation) depuisY(e.clientY); });
+window.addEventListener("pointerup", () => {
+  manipulation = false;
+  poignee.style.cursor = "grab";
+  cibleVitesse = 0; majPoignee();   // retour au frein
+});
+window.addEventListener("resize", majPoignee);
+majPoignee();
+
+/* Clavier : flèches pour conduire aussi */
+const touches = {};
+window.addEventListener("keydown", e => { touches[e.code] = true; });
+window.addEventListener("keyup",   e => { touches[e.code] = false; });
+function clavier() {
+  if (touches.ArrowUp)   cibleVitesse =  1;
+  if (touches.ArrowDown) cibleVitesse = -1;
+  majPoignee();
+}
+
+/* ---------------- Le décor de Nantes ---------------- */
+let distance = 0;   // distance parcourue (px de décor)
+
+// Repères touristiques répartis le long de la ligne
+const monuments = [
+  { type: "chateau",   x: 600 },
+  { type: "arret",     x: 1500, nom: "Château" },
+  { type: "elephant",  x: 2400 },
+  { type: "arret",     x: 3300, nom: "Éléphant" },
+  { type: "pont",      x: 4200 },
+  { type: "grue",      x: 4900 },
+  { type: "arret",     x: 5700, nom: "Commerce" },
+  { type: "maisons",   x: 6500 },
+  { type: "arret",     x: 7400, nom: "Gare Nord" },
+  { type: "elephant",  x: 8300 },
+];
+const LONGUEUR = 9500;
+
+function dessinerArret(x, nom) {
+  // abri + poteau + panneau
+  ctx.fillStyle = "#8a95a5";
+  ctx.fillRect(x - 70, H - 160, 140, 6);
+  ctx.fillRect(x - 70, H - 154, 6, 60);
+  ctx.fillRect(x + 64, H - 154, 6, 60);
+  ctx.fillStyle = "#dce9f5";
+  ctx.fillRect(x - 64, H - 148, 128, 54);
+  ctx.strokeStyle = "#5b7186"; ctx.lineWidth = 2;
+  ctx.strokeRect(x - 64, H - 148, 128, 54);
+  // poteau « TRAM »
+  ctx.fillStyle = "#1d7a4d";
+  ctx.fillRect(x + 95, H - 230, 8, 130);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(x + 78, H - 262, 74, 34);
+  ctx.fillStyle = "#1d7a4d";
+  ctx.font = "bold 15px sans-serif"; ctx.textAlign = "center";
+  ctx.fillText("TRAM", x + 115, H - 240);
+  // nom de l'arrêt
+  ctx.fillStyle = "#333";
+  ctx.font = "bold 17px sans-serif";
+  ctx.fillText(nom, x, H - 180);
+}
+
+function dessinerChateau(x) {
+  // Château des ducs de Bretagne : murailles + tours
+  ctx.fillStyle = "#c9b382";
+  ctx.fillRect(x - 200, H - 260, 400, 130);
+  // créneaux
+  for (let i = -200; i < 200; i += 40) ctx.fillRect(x + i, H - 280, 22, 22);
+  // tours d'angle
+  [[-215, 0], [185, 0]].forEach(([dx]) => {
+    ctx.fillStyle = "#bfa672";
+    ctx.fillRect(x + dx, H - 320, 34, 190);
+    for (let j = 0; j < 3; j++) ctx.fillRect(x + dx + j * 13, H - 340, 9, 22);
+  });
+  // porte
+  ctx.fillStyle = "#6b5636";
+  ctx.beginPath();
+  ctx.moveTo(x - 35, H - 130); ctx.lineTo(x - 35, H - 200);
+  ctx.quadraticCurveTo(x, H - 240, x + 35, H - 200);
+  ctx.lineTo(x + 35, H - 130); ctx.fill();
+  // toits coniques
+  ctx.fillStyle = "#5a6b7a";
+  [[-198, 34], [202, 34]].forEach(([cx, w]) => {
+    ctx.beginPath();
+    ctx.moveTo(x + cx, H - 320);
+    ctx.lineTo(x + cx + w / 2, H - 370);
+    ctx.lineTo(x + cx + w, H - 320);
+    ctx.fill();
+  });
+  // douves
+  ctx.fillStyle = "#2e7ea8";
+  ctx.fillRect(x - 260, H - 128, 520, 22);
+}
+
+function dessinerElephant(x) {
+  // Le Grand Éléphant des Machines de l'île
+  ctx.fillStyle = "#7d6a58";
+  // corps
+  ctx.beginPath();
+  ctx.ellipse(x, H - 150, 90, 60, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // pattes
+  [[-60, 0], [-25, 0], [25, 0], [60, 0]].forEach(([dx]) => {
+    ctx.fillRect(x + dx, H - 110, 24, 76);
+  });
+  // tête
+  ctx.beginPath();
+  ctx.ellipse(x + 85, H - 190, 45, 42, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // trompe (courbée vers l'avant)
+  ctx.strokeStyle = "#7d6a58"; ctx.lineWidth = 22; ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(x + 118, H - 170);
+  ctx.quadraticCurveTo(x + 175, H - 120, x + 150, H - 70);
+  ctx.stroke();
+  // oreille
+  ctx.fillStyle = "#6b5a49";
+  ctx.beginPath();
+  ctx.ellipse(x + 70, H - 210, 28, 34, -0.4, 0, Math.PI * 2);
+  ctx.fill();
+  // défense et œil
+  ctx.fillStyle = "#e8ddc8";
+  ctx.beginPath(); ctx.ellipse(x + 120, H - 168, 10, 5, 0.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#221";
+  ctx.beginPath(); ctx.arc(x + 100, H - 200, 4, 0, Math.PI * 2); ctx.fill();
+  // howdah (cabine sur le dos)
+  ctx.fillStyle = "#a04848";
+  ctx.fillRect(x - 40, H - 215, 60, 42);
+  ctx.fillStyle = "#c9a24a";
+  ctx.beginPath(); ctx.moveTo(x - 48, H - 215); ctx.lineTo(x - 10, H - 245);
+  ctx.lineTo(x + 28, H - 215); ctx.fill();
+}
+
+function dessinerPont(x) {
+  // pont de la Loire (Passerelle Victor-Schoencher / pont de Mauves simplifié)
+  ctx.strokeStyle = "#8a8f99"; ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.moveTo(x - 220, H - 200);
+  ctx.quadraticCurveTo(x, H - 280, x + 220, H - 200);
+  ctx.stroke();
+  ctx.lineWidth = 4;
+  for (let i = -180; i <= 180; i += 45) {
+    const t = i / 220;
+    const y = H - 200 - (1 - t * t) * 60;
+    ctx.beginPath(); ctx.moveTo(x + i, y); ctx.lineTo(x + i, H - 130); ctx.stroke();
+  }
+}
+
+function dessinerGrue(x) {
+  // grue du port de l'île de Nantes
+  ctx.strokeStyle = "#d8a012"; ctx.lineWidth = 10; ctx.lineCap = "butt";
+  ctx.beginPath();
+  ctx.moveTo(x, H - 60); ctx.lineTo(x, H - 300);
+  ctx.moveTo(x - 110, H - 300); ctx.lineTo(x + 90, H - 300);
+  ctx.stroke();
+  ctx.strokeStyle = "#444"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(x + 90, H - 300); ctx.lineTo(x + 90, H - 220); ctx.stroke();
+  ctx.fillStyle = "#666";
+  ctx.fillRect(x - 14, H - 60, 28, 26);
+}
+
+function dessinerMaisons(x) {
+  // rangée de maisons nantaises
+  const couleurs = ["#d98e73", "#c9b46a", "#8fb0a0", "#b5889e", "#d9c07a"];
+  for (let i = 0; i < 4; i++) {
+    const mx = x + i * 110;
+    ctx.fillStyle = couleurs[i % couleurs.length];
+    ctx.fillRect(mx, H - 240, 100, 190);
+    ctx.fillStyle = "#7a4a3a";
+    ctx.beginPath();
+    ctx.moveTo(mx - 6, H - 240); ctx.lineTo(mx + 50, H - 290);
+    ctx.lineTo(mx + 106, H - 240); ctx.fill();
+    ctx.fillStyle = "#e8f2fa";
+    for (let r = 0; r < 2; r++)
+      for (let c = 0; c < 2; c++)
+        ctx.fillRect(mx + 18 + c * 40, H - 200 + r * 55, 24, 30);
+  }
+}
+
+/* ---------------- Ciel, Loire, voie ---------------- */
+function dessinerFond() {
+  // ciel
+  const ciel = ctx.createLinearGradient(0, 0, 0, H);
+  ciel.addColorStop(0, "#aee1f7");
+  ciel.addColorStop(1, "#e6f5fc");
+  ctx.fillStyle = ciel;
+  ctx.fillRect(0, 0, W, H);
+
+  // soleil
+  ctx.fillStyle = "#ffe27a";
+  ctx.beginPath(); ctx.arc(W - 120, 90, 45, 0, Math.PI * 2); ctx.fill();
+
+  // nuages (parallaxe lente)
+  ctx.fillStyle = "#ffffff";
+  for (let i = 0; i < 6; i++) {
+    const nx = ((i * 500 - distance * 0.15) % (W + 400) + W + 400) % (W + 400) - 200;
+    const ny = 60 + (i % 3) * 60;
+    ctx.beginPath();
+    ctx.arc(nx, ny, 30, 0, Math.PI * 2);
+    ctx.arc(nx + 32, ny - 12, 24, 0, Math.PI * 2);
+    ctx.arc(nx + 62, ny, 26, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Loire au fond
+  ctx.fillStyle = "#5aa8c9";
+  ctx.fillRect(0, H - 130, W, 40);
+
+  // peluse
+  ctx.fillStyle = "#7cc47f";
+  ctx.fillRect(0, H - 92, W, 30);
+
+  // plateforme béton + rails
+  ctx.fillStyle = "#b7bec7";
+  ctx.fillRect(0, H - 62, W, 62);
+  ctx.fillStyle = "#6a7178";
+  ctx.fillRect(0, H - 62, W, 6);
+  // rails vus de côté
+  ctx.fillStyle = "#8d949b";
+  ctx.fillRect(0, H - 40, W, 8);
+  // traverses défilantes
+  ctx.fillStyle = "#7d848b";
+  const pas = 90;
+  const dec = ((-distance) % pas + pas) % pas;
+  for (let x = dec - pas; x < W + pas; x += pas) {
+    ctx.fillRect(x, H - 34, 26, 8);
+  }
+  ctx.fillStyle = "#8d949b";
+  ctx.fillRect(0, H - 26, W, 6);
+}
+
+function dessinerMonuments() {
+  for (const m of monuments) {
+    // répéter le décor en boucle
+    let x = m.x - (distance % LONGUEUR);
+    if (x < -400) x += LONGUEUR;
+    if (x > W + 400) continue;
+    switch (m.type) {
+      case "chateau":  dessinerChateau(x); break;
+      case "elephant": dessinerElephant(x); break;
+      case "arret":    dessinerArret(x, m.nom); break;
+      case "pont":     dessinerPont(x); break;
+      case "grue":     dessinerGrue(x); break;
+      case "maisons":  dessinerMaisons(x); break;
+    }
+  }
+}
+
+/* ---------------- Le tramway (vue de l'intérieur de la cabine) --------------- */
+function dessinerTram() {
+  // cadre de cabine (pare-brise) autour de la scène
+  ctx.fillStyle = "#20507e";
+  ctx.fillRect(0, 0, 18, H);               // montant gauche
+  ctx.fillRect(W - 18, 0, 18, H);          // montant droit
+  ctx.fillRect(0, 0, W, 26);               // bandeau haut
+
+  // portes coulissantes visibles à gauche et à droite
+  const ouverture = 46 * animationPortes;   // déplacement en px
+  [[0, -1], [W - 60, 1]].forEach(([bx, sens]) => {
+    // cadre de porte
+    ctx.fillStyle = "#163a5c";
+    ctx.fillRect(bx, H * 0.28, 60, H * 0.5);
+    // vantail (vitre teintée) qui coulisse
+    const vx = bx + sens * ouverture;
+    ctx.fillStyle = "#9fc3dd";
+    ctx.fillRect(vx + 6, H * 0.28 + 6, 48, H * 0.5 - 12);
+    ctx.fillStyle = "#0d2c48";
+    ctx.fillRect(vx + 6, H * 0.28 + 6, 48, 8);
+    // lumière verte = ouvertes, pour repère visuel
+    if (animationPortes > 0.5) {
+      ctx.fillStyle = "#2ecc71";
+      ctx.beginPath(); ctx.arc(bx + 30, H * 0.28 - 14, 6, 0, Math.PI * 2); ctx.fill();
+    }
+  });
+
+  ctx.fillStyle = "#163a5c";
+  ctx.fillRect(0, 26, W, 6);
+
+  // volant discret (en bas au centre, pour l'ambiance conductrice)
+  ctx.strokeStyle = "#163a5c"; ctx.lineWidth = 10;
+  ctx.beginPath(); ctx.arc(W / 2, H + 40, 80, Math.PI, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = "#163a5c";
+  ctx.fillRect(W / 2 - 6, H - 50, 12, 40);
+}
+
+/* ---------------- Boucle principale ---------------- */
+let dernierTemps = performance.now();
+let dernierArretAnnonce = -1;   // index du dernier arrêt annoncé
+
+function annonceArrets() {
+  // annoncer l'arrêt qui arrive (uniquement en avançant)
+  if (vitesse <= 0.1) return;
+  monuments.forEach((m, i) => {
+    if (m.type !== "arret") return;
+    let dx = m.x - (distance % LONGUEUR);
+    if (dx < -400) dx += LONGUEUR;
+    if (dx > 0 && dx < 420 && dernierArretAnnonce !== i) {
+      dernierArretAnnonce = i;
+      parler("Prochain arrêt : " + m.nom + ".");
+    }
+  });
+}
+
+function boucle(t) {
+  const dt = Math.min((t - dernierTemps) / 1000, 0.05);
+  dernierTemps = t;
+
+  clavier();
+  // le tram ne roule pas si les portes sont ouvertes
+  const cibleEffective = portesOuvertes ? 0 : cibleVitesse;
+  vitesse += (cibleEffective - vitesse) * Math.min(1, dt * 3);
+  distance += vitesse * 320 * dt;
+  animationPortes += (ciblePortes - animationPortes) * Math.min(1, dt * 2.5);
+
+  annonceArrets();
+  majRoulage();
+  dessinerFond();
+  dessinerMonuments();
+  dessinerTram();
+
+  // compteur discret de vitesse (facultatif, petits chiffres)
+  ctx.fillStyle = "rgba(255,255,255,.75)";
+  ctx.font = "bold 14px sans-serif"; ctx.textAlign = "left";
+  ctx.fillText(Math.round(Math.abs(vitesse) * 32) + " km/h", 26, 46);
+
+  requestAnimationFrame(boucle);
+}
+requestAnimationFrame(boucle);
+
+// déverrouiller le son au premier contact sur la page
+document.addEventListener("pointerdown", () => {
+  contexteAudio();
+  if (!noeudRoulage) noeudRoulage = creerRoulage();
+}, { once: true });
+document.addEventListener("gesturestart", e => e.preventDefault());
+</script>
+</body>
+</html>
